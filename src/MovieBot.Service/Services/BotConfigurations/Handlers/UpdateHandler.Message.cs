@@ -1,6 +1,8 @@
 ﻿using MovieBot.Domain.DTOs.BotAdmins;
 using MovieBot.Domain.Enums;
+using MovieBot.Domain.Exceptions;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -14,6 +16,16 @@ public partial class UpdateHandler
         var userId = message.From.Id;
         var addAdminState = this.addAdminState.GetState($"{userId}_addadmin");
         var deleteAdminState = this.deleteAdminState.GetState($"{userId}_deleteadmin");
+        var addChannelState = this.subscriptionChannelState.GetState($"{userId}_addchannel");
+        var deleteChannelState = this.subscriptionChannelState.GetState($"{userId}_removechannel");
+
+        if (addChannelState is not null && addChannelState.CurrentStep != ChannelState.None)
+        {
+            if (addChannelState.CurrentStep == ChannelState.ChannelLink)
+                await HandleAddChannelLinkAsync(message);
+            return;
+        }
+
         if (addAdminState is not null && addAdminState.CurrentStep != AddAdminState.None)
         {
             if (addAdminState.CurrentStep == AddAdminState.Username)
@@ -28,7 +40,10 @@ public partial class UpdateHandler
                 await HandleDeleteAdminTelegramIdAsync(message);
             return;
         }
-
+        if (int.TryParse(message.Text, out int messageId))
+        {
+            await HandleSendMovieAsync(message, messageId);
+        }
         var command = message.Text.Split(' ').First();
         var handler = command switch
         {
@@ -37,24 +52,200 @@ public partial class UpdateHandler
             "/addadmin" => HandleAddAdminCommandAsync(message),
             "/removeadmin" => HandleRemoveAdminCommandAsync(message),
             "/channels" => HandleChannelsCommandAsync(message),
+            "/addchannel" => HandleAddChannelCommandAsync(message),
+            "/removechannel" => HandleRemoveChannelCommandAsync(message),
             _ => HandleNotAvailableCommandAsync(message)
         };
         await handler;
     }
 
+    private async Task HandleSendMovieAsync(Message message, int messageId)
+    {
+        var channelId = long.Parse(this.configuration["ChannelIds:ChannelId"]);
+
+        try
+        {
+
+            
+            await this.botClient.CopyMessage(
+                chatId: message.From.Id,
+                fromChatId: channelId,
+                messageId: messageId
+            );
+            
+        }
+        catch (ApiRequestException ex)
+        {
+            if (ex.ErrorCode == 400 || ex.ErrorCode == 404)
+            {
+                await this.botClient.SendMessage(
+                    chatId: message.From.Id,
+                    text: "⚠️ Ushbu kodda kino mavjud emas!"
+                );
+            }
+            else
+            {
+                await this.botClient.SendMessage(
+                    chatId: message.From.Id,
+                    text: "❌ Xatolik yuz berdi. Keyinroq qayta urinib ko'ring."
+                );
+            }
+        }
+    }
+
+
+
+
+    #region RemoveChannel
+    private async Task HandleRemoveChannelLinkAsync(Message message)
+    {
+        var userId = message.From.Id;
+        var state = this.subscriptionChannelState.GetState($"{userId}_removechannel");
+
+        state.ChannelLink = message.Text;
+        state.CurrentStep = ChannelState.None;
+        var delete = await this.subscriptionChannelService.DeleteSubscriptionChannelAsync(state.ChannelLink);
+        if (delete)
+        {
+            this.subscriptionChannelState.ClearState($"{userId}_removechannel");
+            await botClient.SendMessage(
+                    chatId: message.Chat.Id,
+                    text: "✅Channel muvaffaqiyatli o'chirildi"
+                );
+        }
+        else
+        {
+            await botClient.SendMessage(
+                chatId: message.Chat.Id,
+                text: "❌ Ushbu linkda kanal mavjud emas!"
+                );
+        }
+    }
+    private async Task HandleRemoveChannelCommandAsync(Message message)
+    {
+        var userId = message.From.Id;
+        var tgUser = await this.botAdminService.GetByTelegramIdAsync(userId);
+
+        if (tgUser is not null && tgUser.Role == AdminRole.SuperAdmin || tgUser.Role == AdminRole.Admin)
+        {
+            this.subscriptionChannelState.ClearState($"{userId}_removechannel");
+            var state = this.subscriptionChannelState.GetState($"{userId}_removechannel");
+
+            state.CurrentStep = ChannelState.ChannelLink;
+            this.subscriptionChannelState.SetState($"{userId}_removechannel", state);
+
+            await this.botClient.SendMessage(
+            chatId: userId,
+            text: "⚠️ Diqqat! \n🛡 O‘chirmoqchi bo‘lgan kanal linkini kiriting: ");
+
+        }
+        else
+        {
+            await this.botClient.SendMessage(
+                chatId: message.From.Id,
+                text: "❌ Siz ushbu komandani ishlata olmaysiz!!!");
+        }
+    }
+    #endregion
+
+    #region AddChannels
+    private async Task HandleAddChannelLinkAsync(Message message)
+    {
+        var userId = message.From.Id;
+        var stateChannel = this.subscriptionChannelState.GetState($"{userId}_addchannel");
+
+        stateChannel.ChannelLink = message.Text;
+        stateChannel.CurrentStep = ChannelState.None;
+        string channelUsername = message.Text.StartsWith("@") ? message.Text : "@" + message.Text;
+
+        try
+        {
+            var chatMember = await this.botClient.GetChatMember(channelUsername, botClient.BotId);
+
+            if (chatMember.Status != ChatMemberStatus.Administrator && chatMember.Status != ChatMemberStatus.Creator)
+            {
+                await botClient.SendMessage(
+                    chatId: message.Chat.Id,
+                    text: "❌ Bot ushbu kanalda admin emas \nAdmin qilib qayta urining!!!"
+                );
+                return;
+            }
+
+            await this.subscriptionChannelService.CreateSubscriptionChannelAsync(stateChannel);
+            this.subscriptionChannelState.ClearState($"{userId}_addchannel");
+
+            await botClient.SendMessage(
+                chatId: message.Chat.Id,
+                text: "✅ Kanal muvaffaqiyatli qo'shildi"
+            );
+        }
+        catch (MovieBotException ex) when (ex.StatusCode == 409)
+        {
+            await botClient.SendMessage(
+                chatId: message.Chat.Id,
+                text: "❌ Ushbu kanal allaqachon qo'shilgan!!!"
+            );
+        }
+        catch (ApiRequestException ex)
+        {
+            await botClient.SendMessage(
+                chatId: message.Chat.Id,
+                text: "❌ Xatolik: Kanal topilmadi yoki bot kanalga qo‘shilmagan. \nIltimos, tekshirib qayta urining!"
+            );
+        }
+    }
+
+
+    private async Task HandleAddChannelCommandAsync(Message message)
+    {
+        var userId = message.From.Id;
+        var tgUser = await this.botAdminService.GetByTelegramIdAsync(userId);
+
+        if (tgUser is not null && tgUser.Role == AdminRole.SuperAdmin || tgUser.Role == AdminRole.Admin)
+        {
+            this.subscriptionChannelState.ClearState($"{userId}_addchannel");
+            var stateChannel = this.subscriptionChannelState.GetState($"{userId}_addchannel");
+            if (stateChannel is not null && stateChannel.CurrentStep == ChannelState.None)
+            {
+                stateChannel.CurrentStep = ChannelState.ChannelLink;
+                this.subscriptionChannelState.SetState($"{userId}_addchannel", stateChannel);
+                await this.botClient.SendMessage(
+                    chatId: userId,
+                    text: "🔗 Kanal linkini yuboring:(@ belgisiz) ");
+            }
+            else
+            {
+                await this.botClient.SendMessage(
+                    chatId: userId,
+                    text: "Uzr qandaydir xatolik bo'ldi. Qayta urining");
+            }
+        }
+        else
+        {
+            await this.botClient.SendMessage(
+            chatId: userId,
+            text: "❌ Siz ushbu komandani ishlata olmaysiz!!!"
+            );
+        }
+    }
+    #endregion  
+
+    #region Channels
     private async Task HandleChannelsCommandAsync(Message message)
     {
         var tgUser = await this.botAdminService.GetByTelegramIdAsync(message.From.Id);
-        
-        if(tgUser is not null && (tgUser.Role == AdminRole.SuperAdmin || tgUser.Role == AdminRole.Admin))
+
+        if (tgUser is not null && (tgUser.Role == AdminRole.SuperAdmin || tgUser.Role == AdminRole.Admin))
         {
             var channels = await this.subscriptionChannelService.GetAllSubscriptionChannelsAsync();
+            var channelList = channels.ToArray();
+            var channelLinks = new List<string>();
 
-            var channelList = string.Join("\n", channels);
+            string result = string.Join("\n", channelList.Select((ch, i) => $"{i + 1}. {ch.ChannelLink}"));
 
             await this.botClient.SendMessage(
                 chatId: message.From.Id,
-                text: $"📋 Homiy kanallaringiz:\n{channelList}");
+                text: $"📋 Homiy kanallaringiz:\n{result}");
         }
         else
         {
@@ -64,7 +255,7 @@ public partial class UpdateHandler
             );
         }
     }
-
+    #endregion 
 
     #region RemoveAdmin
     private async Task HandleDeleteAdminTelegramIdAsync(Message message)
@@ -77,7 +268,7 @@ public partial class UpdateHandler
             state.TelegramId = telegramId;
             state.CurrentStep = RemoveAdminState.None;
             var delete = await this.botAdminService.DeleteBotAdminAsync(telegramId);
-            if(delete)
+            if (delete)
             {
                 this.deleteAdminState.ClearState($"{userId}_deleteadmin");
 
@@ -148,15 +339,31 @@ public partial class UpdateHandler
         {
             adminState.TelegramUserId = telegramId;
             adminState.CurrentStep = AddAdminState.None;
-            await this.botAdminService.CreateBotAdminAsync(adminState);
 
-            this.addAdminState.ClearState($"{userId}_addadmin");
+            try
+            {
+                await this.botAdminService.CreateBotAdminAsync(adminState);
+                this.addAdminState.ClearState($"{userId}_addadmin");
 
-            await botClient.SendMessage(
-                chatId: message.Chat.Id,
-                text: "✅Admin muvaffaqiyatli qo'shildi"
-            );
-
+                await botClient.SendMessage(
+                    chatId: message.Chat.Id,
+                    text: "✅ Admin muvaffaqiyatli qo'shildi"
+                );
+            }
+            catch (MovieBotException ex) when (ex.StatusCode == 409)  // ❗ 409 xatolikni ushlash
+            {
+                await botClient.SendMessage(
+                    chatId: message.Chat.Id,
+                    text: "❌ Bu foydalanuvchi allaqachon admin!"
+                );
+            }
+            catch (Exception ex) // ❗ Boshqa xatoliklar uchun
+            {
+                await botClient.SendMessage(
+                    chatId: message.Chat.Id,
+                    text: $"❌ Xatolik yuz berdi: {ex.Message}"
+                );
+            }
         }
         else
         {
@@ -164,10 +371,9 @@ public partial class UpdateHandler
                 chatId: message.Chat.Id,
                 text: "❌ Iltimos, faqat raqam kiriting!"
             );
-            return;
         }
-
     }
+
 
     private async Task HandleAddAdminUsernameAsync(Message message)
     {
@@ -197,22 +403,21 @@ public partial class UpdateHandler
                 addState.CurrentStep = AddAdminState.Username;
                 this.addAdminState.SetState($"{userId}_addadmin", addState);
                 await this.botClient.SendMessage(
-                    chatId: message.From.Id,
+                    chatId: userId,
                     text: "👤 Username yuboring (@ belgisiz): ");
-
             }
             else
             {
                 // Handle the case where addState is null
                 await this.botClient.SendMessage(
-                    chatId: message.From.Id,
+                    chatId: userId,
                     text: "Uzr qandaydir xatolik bo'ldi. Qayta urining");
             }
         }
         else
         {
             await this.botClient.SendMessage(
-                chatId: message.From.Id,
+                chatId: userId,
                 text: "❌ Siz ushbu komandani ishlata olmaysiz!!!");
         }
     }
@@ -262,19 +467,17 @@ public partial class UpdateHandler
                         "/removeadmin – Adminni olib tashlash\n" +
                         "/channels – Kanallar ro‘yxatini ko‘rish\n" +
                         "/addchannel – Yangi kanal qo‘shish\n" +
-                        "/removechannel – Kanalni olib tashlash\n" +
-                        "/sendall – Barcha foydalanuvchilarga xabar yuborish");
+                        "/removechannel – Kanalni olib tashlash\n");
 
         }
         else if (user is not null && user.Role == AdminRole.Admin)
         {
             await this.botClient.SendMessage(
                 chatId: message.From.Id,
-                text: "Siz super admin sifatida quyidagi buyruqlardan foydalanishingiz mumkin:\n\n" +
+                text: "Siz admin sifatida quyidagi buyruqlardan foydalanishingiz mumkin:\n\n" +
                         "/channels – Kanallar ro‘yxatini ko‘rish\n" +
                         "/addchannel – Yangi kanal qo‘shish\n" +
-                        "/removechannel – Kanalni olib tashlash\n" +
-                        "/sendall – Barcha foydalanuvchilarga xabar yuborish");
+                        "/removechannel – Kanalni olib tashlash\n");
         }
 
         else

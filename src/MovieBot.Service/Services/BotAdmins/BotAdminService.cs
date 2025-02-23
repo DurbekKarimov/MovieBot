@@ -44,7 +44,7 @@ public class BotAdminService : IBotAdminService
                                          .FirstOrDefaultAsync();
 
         if (admin is null)
-            throw new MovieBotException(404, "Admin is not found");
+            return false;
         
         return await this.repository.RemoveAsync(admin.Id);
     }

@@ -36,16 +36,16 @@ public class SubscriptionChannelService : ISubscriptionChannelService
         return this.mapper.Map<SubscriptionChannelForResultDto>(result);
     }
 
-    public async Task<bool> DeleteSubscriptionChannelAsync(long id)
+    public async Task<bool> DeleteSubscriptionChannelAsync(string channelLink)
     {
         var channel = await this.channelRepository.GetAllAsync()
-                                                  .Where(ch => ch.Id == id)
+                                                  .Where(ch => ch.ChannelLink == channelLink)
                                                   .AsNoTracking()
                                                   .FirstOrDefaultAsync();
         if (channel is null)
-            throw new MovieBotException(404, "Channel is not found");
+            return false;
 
-        return await this.channelRepository.RemoveAsync(id);
+        return await this.channelRepository.RemoveAsync(channel.Id);
     }
 
     public async Task<IEnumerable<SubscriptionChannelForResultDto>> GetAllSubscriptionChannelsAsync()
