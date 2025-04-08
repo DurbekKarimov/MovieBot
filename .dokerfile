@@ -2,8 +2,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /app
 
-# Copy the solution file first
-COPY ./src/*.sln ./ 
+# Copy the solution file first (to the root of /app)
+COPY ./MovieBot.sln ./  # .sln faylini to'g'ridan-to'g'ri konteynerga nusxalash
 
 # Copy project files and restore dependencies as separate layers
 COPY ./src/MovieBot.Api/*.csproj ./MovieBot.Api/
