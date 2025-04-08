@@ -25,7 +25,12 @@ public partial class UpdateHandler
                 await HandleAddChannelLinkAsync(message);
             return;
         }
-
+        if(deleteChannelState is not null && deleteChannelState.CurrentStep != ChannelState.None)
+        {
+            if (deleteChannelState.CurrentStep == ChannelState.ChannelLink)
+                await HandleRemoveChannelLinkAsync(message);
+            return;
+        }
         if (addAdminState is not null && addAdminState.CurrentStep != AddAdminState.None)
         {
             if (addAdminState.CurrentStep == AddAdminState.Username)
@@ -119,6 +124,7 @@ public partial class UpdateHandler
                 chatId: message.Chat.Id,
                 text: "❌ Ushbu linkda kanal mavjud emas!"
                 );
+            this.subscriptionChannelState.ClearState($"{userId}_removechannel");
         }
     }
     private async Task HandleRemoveChannelCommandAsync(Message message)
