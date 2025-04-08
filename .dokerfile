@@ -3,13 +3,13 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /app
 
 # Copy the solution file first (to the root of /app)
-COPY ./MovieBot.sln ./  # .sln faylini to'g'ridan-to'g'ri konteynerga nusxalash
+COPY ./MovieBot.sln ./  
 
 # Copy project files and restore dependencies as separate layers
-COPY ./src/MovieBot.Api/*.csproj ./MovieBot.Api/
-COPY ./src/MovieBot.Data/*.csproj ./MovieBot.Data/
-COPY ./src/MovieBot.Domain/*.csproj ./MovieBot.Domain/
-COPY ./src/MovieBot.Service/*.csproj ./MovieBot.Service/
+COPY ./src/MovieBot.Api/*.csproj ./src/MovieBot.Api/
+COPY ./src/MovieBot.Data/*.csproj ./src/MovieBot.Data/
+COPY ./src/MovieBot.Domain/*.csproj ./src/MovieBot.Domain/
+COPY ./src/MovieBot.Service/*.csproj ./src/MovieBot.Service/
 
 # Run dotnet restore for the solution file
 RUN dotnet restore MovieBot.sln
