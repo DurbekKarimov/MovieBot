@@ -23,7 +23,7 @@ builder.Services.AddCustomServices();
 
 // database
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // telegram bot
 builder.Services.AddSingleton<ITelegramBotClient>(provider => new TelegramBotClient($"{token}"));
