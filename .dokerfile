@@ -2,16 +2,19 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /app
 
-# Copy csproj files and restore as distinct layers
-COPY ./src/*.sln ./
+# Copy the solution file first
+COPY ./src/*.sln ./ 
+
+# Copy project files and restore dependencies as separate layers
 COPY ./src/MovieBot.Api/*.csproj ./MovieBot.Api/
 COPY ./src/MovieBot.Data/*.csproj ./MovieBot.Data/
 COPY ./src/MovieBot.Domain/*.csproj ./MovieBot.Domain/
 COPY ./src/MovieBot.Service/*.csproj ./MovieBot.Service/
 
-RUN dotnet restore
+# Run dotnet restore for the solution file
+RUN dotnet restore MovieBot.sln
 
-# Copy everything else and build
+# Copy the rest of the application source code
 COPY ./src/. ./src/
 WORKDIR /app/src/MovieBot.Api
 RUN dotnet publish -c Release -o /out
@@ -19,6 +22,6 @@ RUN dotnet publish -c Release -o /out
 # 2. Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
-COPY --from=build /out .
+COPY --from=build /out ./
 
 ENTRYPOINT ["dotnet", "MovieBot.Api.dll"]
