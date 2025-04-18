@@ -33,7 +33,7 @@ public class ConfigurationWebhook : IHostedService
         this.logger.LogInformation("Configuring Webhook");
 
         await botClient.SendMessage(
-            chatId: 1812987067,
+            chatId: 705705014,
             text: "webhook o'rnatilmoqda",
             cancellationToken: cancellationToken
         );
@@ -51,7 +51,7 @@ public class ConfigurationWebhook : IHostedService
         this.logger.LogInformation("Removing Webhook");
 
         await botClient.SendMessage(
-            chatId: 1812987067,
+            chatId: 705705014,
             text: "Bot uxlamoqda",
             cancellationToken: cancellationToken
             );
