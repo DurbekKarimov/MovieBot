@@ -54,6 +54,11 @@ builder.Services.AddCors(options =>
         });
 });
 
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.ListenAnyIP(8080);
+});
+
 builder.Services.AddHostedService<ConfigurationWebhook>();
 
 builder.Services.AddScoped<UpdateHandler>();
